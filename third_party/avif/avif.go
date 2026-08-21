@@ -1,0 +1,331 @@
+// Package avif implements an AVIF image decoder based on libavif compiled to WASM.
+package avif
+
+//go:generate wasm2go -pkg avif -unsafe -tags wasm2go -o libavif.go lib/avif.wasm
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"io"
+)
+
+// Errors .
+var (
+	ErrMemRead  = errors.New("avif: mem read failed")
+	ErrMemWrite = errors.New("avif: mem write failed")
+	ErrDecode   = errors.New("avif: decode failed")
+	ErrEncode   = errors.New("avif: encode failed")
+)
+
+// AVIF represents the possibly multiple images stored in a AVIF file.
+type AVIF struct {
+	// Decoded images, NRGBA or NRGBA64.
+	Image []image.Image
+	// Delay times, one per frame, in seconds.
+	Delay []float64
+	// LoopCount is the number of times the animation repeats (0 = infinite).
+	LoopCount int
+}
+
+// DefaultQuality is the default quality encoding parameter.
+const DefaultQuality = 60
+
+// DefaultSpeed is the default speed encoding parameter.
+const DefaultSpeed = 10
+
+// Options are the encoding parameters.
+type Options struct {
+	// Quality in the range [0,100]. Default is 60.
+	Quality int
+	// Quality in the range [0,100].
+	QualityAlpha int
+	// Speed in the range [0,10]. Slower should make for a better quality image in less bytes.
+	Speed int
+	// Chroma subsampling, 444|422|420.
+	ChromaSubsampling image.YCbCrSubsampleRatio
+	// Lossless enables lossless compression. Lossless ignores quality and forces 4:4:4 chroma.
+	Lossless bool
+	// AutoRotate applies the irot/imir orientation to the decoded image (Decode/DecodeAll only).
+	AutoRotate bool
+	// MatrixCoefficients 是 RGB→YUV 转换矩阵（ISO 23091-2 码点）。
+	// 0=默认（BT.601）；9=BT.2020nc。设置后同时写入色彩描述。
+	MatrixCoefficients uint16
+	// ColorPrimaries / TransferCharacteristics 随 MatrixCoefficients 写入色彩描述；
+	// 0 表示保持默认（BT.601 配套值）。
+	ColorPrimaries         uint16
+	TransferCharacteristics uint16
+}
+
+// avifMaxHeaderSize bounds the prefix read to find dimensions without decoding.
+const avifMaxHeaderSize = 1 << 18
+
+func doDecode(r io.Reader, configOnly, decodeAll bool) (*AVIF, image.Config, error) {
+	if dynamic {
+		return decodeDynamic(r, configOnly, decodeAll)
+	}
+
+	return decode(r, configOnly, decodeAll)
+}
+
+// Decode reads a AVIF image from r; pass Options{AutoRotate: true} to apply the orientation.
+func Decode(r io.Reader, opts ...Options) (image.Image, error) {
+	if len(opts) > 0 && opts[0].AutoRotate {
+		data, err := io.ReadAll(r)
+		if err != nil {
+			return nil, fmt.Errorf("avif: read: %w", err)
+		}
+
+		ret, _, err := doDecode(bytes.NewReader(data), false, false)
+		if err != nil {
+			return nil, err
+		}
+
+		props, _ := parseAVIFProps(data)
+
+		return applyOrientation(ret.Image[0], props.orientation), nil
+	}
+
+	ret, _, err := doDecode(r, false, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return ret.Image[0], nil
+}
+
+// DecodeConfig returns the color model and dimensions of a AVIF image without decoding the entire image.
+func DecodeConfig(r io.Reader) (image.Config, error) {
+	prefix, err := io.ReadAll(io.LimitReader(r, avifMaxHeaderSize))
+	if err != nil {
+		return image.Config{}, fmt.Errorf("avif: read: %w", err)
+	}
+
+	if props, ok := parseAVIFProps(prefix); ok {
+		cm := color.RGBAModel
+		if props.hiDepth {
+			cm = color.RGBA64Model
+		}
+
+		return image.Config{ColorModel: cm, Width: props.width, Height: props.height}, nil
+	}
+
+	_, cfg, err := doDecode(io.MultiReader(bytes.NewReader(prefix), r), true, false)
+	if err != nil {
+		return image.Config{}, err
+	}
+
+	return cfg, nil
+}
+
+// DecodeAll reads a AVIF image from r; pass Options{AutoRotate: true} to orient each frame.
+func DecodeAll(r io.Reader, opts ...Options) (*AVIF, error) {
+	if len(opts) > 0 && opts[0].AutoRotate {
+		data, err := io.ReadAll(r)
+		if err != nil {
+			return nil, fmt.Errorf("avif: read: %w", err)
+		}
+
+		ret, _, err := doDecode(bytes.NewReader(data), false, true)
+		if err != nil {
+			return nil, err
+		}
+
+		props, _ := parseAVIFProps(data)
+		if props.orientation > 1 {
+			for i := range ret.Image {
+				ret.Image[i] = applyOrientation(ret.Image[i], props.orientation)
+			}
+		}
+
+		return ret, nil
+	}
+
+	ret, _, err := doDecode(r, false, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return ret, nil
+}
+
+// Encode writes the image m to w with the given options.
+func Encode(w io.Writer, m image.Image, o ...Options) error {
+	quality := DefaultQuality
+	qualityAlpha := DefaultQuality
+	speed := DefaultSpeed
+	chroma := image.YCbCrSubsampleRatio420
+	lossless := false
+
+	if o != nil {
+		opt := o[0]
+		quality = opt.Quality
+		qualityAlpha = opt.QualityAlpha
+		speed = opt.Speed
+		chroma = opt.ChromaSubsampling
+		lossless = opt.Lossless
+
+		if quality <= 0 {
+			quality = DefaultQuality
+		} else if quality > 100 {
+			quality = 100
+		}
+
+		if qualityAlpha <= 0 {
+			qualityAlpha = DefaultQuality
+		} else if qualityAlpha > 100 {
+			qualityAlpha = 100
+		}
+
+		if speed < 0 {
+			speed = DefaultSpeed
+		} else if speed > 10 {
+			speed = 10
+		}
+	}
+
+	if lossless {
+		quality = 100
+		qualityAlpha = 100
+		chroma = image.YCbCrSubsampleRatio444
+	}
+
+	if dynamic {
+		var matrix, primaries, transfer uint16
+		if o != nil {
+			matrix = o[0].MatrixCoefficients
+			primaries = o[0].ColorPrimaries
+			transfer = o[0].TransferCharacteristics
+		}
+		err := encodeDynamic(w, m, quality, qualityAlpha, speed, chroma, lossless, matrix, primaries, transfer)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := encode(w, m, quality, qualityAlpha, speed, chroma, lossless)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// EncodeAll writes the animation anim to w; all frames must share the same bounds.
+func EncodeAll(w io.Writer, anim *AVIF, o ...Options) error {
+	if anim == nil || len(anim.Image) == 0 {
+		return ErrEncode
+	}
+
+	quality := DefaultQuality
+	qualityAlpha := DefaultQuality
+	speed := DefaultSpeed
+	chroma := image.YCbCrSubsampleRatio420
+	lossless := false
+
+	if o != nil {
+		opt := o[0]
+		quality = opt.Quality
+		qualityAlpha = opt.QualityAlpha
+		speed = opt.Speed
+		chroma = opt.ChromaSubsampling
+		lossless = opt.Lossless
+
+		if quality <= 0 {
+			quality = DefaultQuality
+		} else if quality > 100 {
+			quality = 100
+		}
+
+		if qualityAlpha <= 0 {
+			qualityAlpha = DefaultQuality
+		} else if qualityAlpha > 100 {
+			qualityAlpha = 100
+		}
+
+		if speed < 0 {
+			speed = DefaultSpeed
+		} else if speed > 10 {
+			speed = 10
+		}
+	}
+
+	if lossless {
+		quality = 100
+		qualityAlpha = 100
+		chroma = image.YCbCrSubsampleRatio444
+	}
+
+	b := anim.Image[0].Bounds()
+	width, height := b.Dx(), b.Dy()
+	frameSize := width * height * 4
+
+	frames := make([]byte, frameSize*len(anim.Image))
+	delays := make([]int, len(anim.Image))
+
+	for i, img := range anim.Image {
+		if img.Bounds().Dx() != width || img.Bounds().Dy() != height {
+			return ErrEncode
+		}
+
+		rgba := imageToRGBA(img)
+		copy(frames[i*frameSize:(i+1)*frameSize], rgba.Pix)
+
+		if i < len(anim.Delay) {
+			delays[i] = int(anim.Delay[i]*1000 + 0.5)
+		}
+	}
+
+	if dynamic {
+		return encodeAnimationDynamic(w, frames, width, height, len(anim.Image), delays, anim.LoopCount, quality, qualityAlpha, speed, chroma, lossless, o[0].MatrixCoefficients, o[0].ColorPrimaries, o[0].TransferCharacteristics)
+	}
+
+	return encodeAnimation(w, frames, width, height, len(anim.Image), delays, anim.LoopCount, quality, qualityAlpha, speed, chroma, lossless)
+}
+
+// Dynamic returns error (if there was any) during opening dynamic/shared library.
+func Dynamic() error {
+	return dynamicErr
+}
+
+const (
+	avifChromaUpsamplingFastest = 1
+
+	avifPixelFormatYuv444 = 1
+	avifPixelFormatYuv422 = 2
+	avifPixelFormatYuv420 = 3
+
+	avifAddImageFlagNone   = 0
+	avifAddImageFlagSingle = 2
+
+	avifMatrixCoefficientsIdentity = 0
+	avifRangeFull                  = 1
+
+	avifRepetitionCountInfinite = -1
+
+	avifMatrixCoefficientsBT2020nc = 9
+)
+
+func imageToRGBA(src image.Image) *image.RGBA {
+	if dst, ok := src.(*image.RGBA); ok {
+		return dst
+	}
+
+	b := src.Bounds()
+	dst := image.NewRGBA(b)
+	draw.Draw(dst, dst.Bounds(), src, b.Min, draw.Src)
+
+	return dst
+}
+
+func decodeWrapper(r io.Reader) (image.Image, error) {
+	return Decode(r)
+}
+
+func init() {
+	image.RegisterFormat("avif", "????ftypavif", decodeWrapper, DecodeConfig)
+	image.RegisterFormat("avif", "????ftypavis", decodeWrapper, DecodeConfig)
+}
