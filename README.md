@@ -17,14 +17,10 @@ Motion Photo JPEG ──► 静态图 ──进程内编码──► AVIF
   - item 3：`Exif`（含自定义标签 `XOMUPhoto=1`）
 - `mdat`：`[AV1 静态图数据][AV1 视频 MP4][EXIF]`
 
-完全不使用任何外部命令（avifenc 等不需要）。编码全在进程内完成：
+完全不使用任何外部命令（avifenc/ffmpeg 均不需要）。编码全在进程内完成：
 静态图经 libavif（经 purego 调用原生库）编码；视频轨 HEVC → AV1 的
 重编码为「h265 解码 → libavif 动画编码 → 自研 AV1+AAC MP4 封装」，
 源视频为 AV1 时原样透传。
-
-音频轨重编码保留 AAC 时调用系统 `ffmpeg`（仅 `--audio passthrough`）；
-保留该选项是因为大多数源视频的 AAC 轨已经是兼容格式，但仍希望归一化
-码率/采样率/声道数。`--audio none` 可完全跳过音频处理、不依赖 ffmpeg。
 
 ## 快速开始
 
@@ -62,24 +58,21 @@ convert 主要选项：
 
 | 选项 | 默认 | 说明 |
 |---|---|---|
-| `-q, --quality` | 10 | AVIF 静态图质量（0-100） |
+| `-q, --quality` | 85 | AVIF 静态图质量（0-100） |
 | `--speed` | 6 | 图像编码速度（0-10） |
 | `--chroma` | 420 | 色度采样（420/444） |
-| `--crf` | 50 | AV1 视频质量（0-63，越低越好；调高可大幅减小体积） |
-| `--video-preset` | 6 | 视频编码速度（0-10） |
-| `--audio` | passthrough | 音频处理（passthrough/none） |
-| `--audio-bitrate` | 8k | AAC 码率（如 4k/8k/16k） |
-| `--audio-samplerate` | 16000 | 采样率（Hz，0 保持源采样率） |
-| `--audio-channels` | 1 | 声道数（0 保持源声道数） |
+| `--crf` | 28 | AV1 视频质量（0-63，越低越好；调高可大幅减小体积） |
+| `--video-preset` | 6 | 视频编码速度（0-13） |
+| `--audio` | passthrough | 音频处理（passthrough/copy/aac/opus/none） |
 | `--xomu-tag-id/--xomu-tag-value` | 0x0002 / 1 | EXIF 自定义标签 |
 | `--no-xomu-brand` | | 不加 xomu 品牌 |
 | `--no-exif` | | 不写 EXIF |
 | `--embed-still-avif/--embed-video-mp4` | | 使用预编码文件（跳过编码） |
-| `--raw` | | 不重编码原图原视频，仅做格式封装 |
 | `--tmpdir` | 系统临时 | 临时目录 |
 | `--json` | | JSON 输出 |
 
-`--audio`：`passthrough` 重编码保留源音频轨（调用 `ffmpeg`）；`none` 丢弃音频。
+`--audio`：`passthrough` 原样携带源 AAC 音轨；`copy/aac/opus` 为兼容旧
+选项保留（效果与 passthrough 相同）；`none` 丢弃音频。
 
 ## C 动态库
 
