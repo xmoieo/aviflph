@@ -102,6 +102,7 @@ jobs:
           NDK_VERSION=r27c
           wget -q "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip" -O ndk.zip
           unzip -q ndk.zip
+          rm -f ndk.zip
           NDK_PATH="$PWD/android-ndk-${NDK_VERSION}"
           echo "NDK_PATH=${NDK_PATH}" >> "$GITHUB_ENV"
           echo "${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
