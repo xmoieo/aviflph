@@ -45,10 +45,11 @@ func BuildFullBox(typ string, ver uint8, flags uint32, payload []byte) []byte {
 // BuildFtyp 构建 ftyp 盒子。
 // major 为主品牌，brands 为兼容品牌列表（每个 4 字节）。
 func BuildFtyp(major string, brands []string) []byte {
-	payload := make([]byte, 4+4*len(brands))
+	payload := make([]byte, 4+4+4*len(brands)) // major + minor(0) + brands
 	copy(payload, major)
+	// minor version = 0 (已由 make 初始化)
 	for i, b := range brands {
-		copy(payload[4+i*4:], b)
+		copy(payload[8+i*4:], b)
 	}
 	return BuildBox(TypeFtyp, payload)
 }
