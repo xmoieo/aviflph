@@ -98,9 +98,17 @@ jobs:
       - name: Build CLI
         run: |
           OUT="aviflph-${{ matrix.target }}${{ matrix.ext }}"
+
+          if [ "${{ matrix.goos }}" = "android" ]; then
+            CGO_FLAG=1
+          else
+            CGO_FLAG=0
+          fi
+
           GOOS=${{ matrix.goos }} \
           GOARCH=${{ matrix.goarch }} \
-          CGO_ENABLED=0 \
+          CGO_ENABLED=${CGO_FLAG} \
+          CC="${{ matrix.cc }}" \
             go build -trimpath -ldflags "-s -w" -o "$OUT" ./cmd/aviflph
           echo "CLI_OUT=${OUT}" >> "$GITHUB_ENV"
 
