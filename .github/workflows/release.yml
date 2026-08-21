@@ -96,6 +96,7 @@ jobs:
           echo "${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
 
       - name: Build CLI
+        if: matrix.target != 'wasm'
         run: |
           OUT="aviflph-${{ matrix.target }}${{ matrix.ext }}"
 
