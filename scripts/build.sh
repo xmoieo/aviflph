@@ -14,7 +14,7 @@ mkdir -p "$DIST"
 # CLI 路径
 CLI_OUT="${CLI_OUT:-$DIST/aviflph}"
 
-echo ">> 纯进程内编码：不依赖 avifenc/ffmpeg 等外部命令"
+echo ">> 进程内编码：avifenc 不需要；--audio passthrough 依赖系统 ffmpeg（可选）"
 
 build_cli() {
   echo ">> building CLI -> $CLI_OUT"

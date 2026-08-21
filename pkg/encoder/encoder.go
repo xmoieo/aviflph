@@ -2,15 +2,18 @@
 
 // Package encoder 负责把图像编码为 AVIF、把视频重编码为 AV1(MP4)。
 //
-// 全程进程内完成，不调用任何外部命令：
+// 全程进程内完成：
 //   - 静态图：经 purego 调用系统 libavif 原生库编码
 //     （github.com/gen2brain/avif）。
 //   - 视频：HEVC 源用纯 Go 解码器（github.com/gen2brain/h265）解码，
 //     再用进程内 libavif+aom 重编码为 AV1，并与源 AAC 音频重封装为 MP4。
 //     （见 aviflph/pkg/video）
+//   - 音频轨重编码（--audio passthrough）依赖系统 ffmpeg，仅用于归一化
+//     码率/采样率/声道数；选 --audio none 时完全跳过音频处理。
 //
-// 因此本库不携带任何外部可执行文件依赖，可在 Android/WASM 等
-// 无进程执行能力的环境下工作（WASM 亦无法加载原生库，仅封装类操作可用）。
+// 因此本库不携带外部可执行文件依赖（除可选的 ffmpeg），可在
+// Android/WASM 等无进程执行能力的有限环境下工作（WASM 亦无法加载原生库，
+// 仅封装类操作可用）。
 package encoder
 
 import (
@@ -28,18 +31,18 @@ import (
 // Options 是编码参数。
 type Options struct {
 	// ---- 静态图 (AVIF) ----
-	StillQuality int    // 质量 0-100，越高越好，默认 15（等效 magick -quality 10 ≈191KB）
+	StillQuality int    // 质量 0-100，越高越好，默认 10
 	StillSpeed   int    // 编码速度 0-10，越高越快但质量略降，默认 6
 	StillChroma  string // 色度采样 420/422/444，默认 420
 
 	// ---- 视频 (AV1 MP4) ----
-	VideoCRF     int // 视频质量 0-63，越低质量越好，默认 40（等效 ffmpeg -crf 40）
+	VideoCRF     int // 视频质量 0-63，越低质量越好，默认 50
 	VideoPreset  int // 编码速度 0-10，默认 6
 	VideoScaleW  int // 输出宽度，0 保持源尺寸
 	VideoScaleH  int // 输出高度，0 保持源尺寸
 	VideoFPS     int // 输出帧率，0 保持源帧率
 	AudioMode    string // passthrough / none，默认 passthrough
-	AudioBitrate string // AAC 码率，如 "16k"、"32k"，空串默认 "16k"
+	AudioBitrate string // AAC 码率，如 "16k"、"32k"，空串默认 "8k"
 	AudioSampleRate int // 采样率（如 48000），0 保持源采样率
 	AudioChannels  int  // 声道数，0 保持源声道数
 
