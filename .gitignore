@@ -1,0 +1,34 @@
+# Build outputs
+/dist/
+/*.test
+/coverage.txt
+/coverage.out
+/profile.out
+
+# Cross-compilation generated wrappers
+/.cross-tools/
+
+# Playwright test artifacts
+/.playwright-mcp/
+
+# Pre-built WASM binaries
+/aviflph.wasm
+/web/aviflph.wasm
+/dist/wasm/aviflph.wasm
+/dist/wasm/wasm_exec.js
+/dist/**/wasm_exec.js
+
+# Go test/cache
+*.test
+*.out
+/test/coverage/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# OS
+Thumbs.db
