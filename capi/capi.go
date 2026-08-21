@@ -4,9 +4,9 @@
 //
 // 构建（生成 libaviflph.so / libaviflph.dylib / aviflph.dll）：
 //
-//	go build -buildmode=c-shared -o libaviflph.so ./cmd/lpshared
+//	go build -buildmode=c-shared -o libaviflph.so ./capi
 //
-// 调用方需包含本包提供的 aviflph.h 头文件，并通过 lp_free 释放
+// 调用方需包含本包生成的 aviflph.h 头文件，并通过 lp_free 释放
 // 所有由本库返回的动态内存。
 //
 // 线程安全：除 lp_last_error 外，各函数均可并发调用。
