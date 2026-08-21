@@ -54,6 +54,14 @@ jobs:
             ext: ""
             libext: .dylib
 
+          - target: darwin-amd64
+            runner: macos-13
+            goos: darwin
+            goarch: amd64
+            cc: clang
+            ext: ""
+            libext: .dylib
+
           - target: android-arm64
             runner: ubuntu-latest
             goos: android
@@ -224,6 +232,7 @@ jobs:
           echo "| Linux RISC-V 64 | \`aviflph-linux-riscv64.zip\` |" >> notes.md
           echo "| Windows x86_64 | \`aviflph-windows-amd64.zip\` |" >> notes.md
           echo "| macOS ARM64 | \`aviflph-darwin-arm64.zip\` |" >> notes.md
+          echo "| macOS x86_64 | \`aviflph-darwin-amd64.zip\` |" >> notes.md
           echo "| Android ARM64 | \`aviflph-android-arm64.zip\` |" >> notes.md
           echo "" >> notes.md
           echo "### C 动态库（含头文件）" >> notes.md
@@ -235,6 +244,7 @@ jobs:
           echo "| Linux RISC-V 64 | \`libaviflph-linux-riscv64.zip\` |" >> notes.md
           echo "| Windows x86_64 | \`libaviflph-windows-amd64.zip\` |" >> notes.md
           echo "| macOS ARM64 | \`libaviflph-darwin-arm64.zip\` |" >> notes.md
+          echo "| macOS x86_64 | \`libaviflph-darwin-amd64.zip\` |" >> notes.md
           echo "| Android ARM64 | \`libaviflph-android-arm64.zip\` |" >> notes.md
           echo "" >> notes.md
           echo "### WebAssembly" >> notes.md
