@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Photo 工具</title>
+<style>
+  :root { --bg:#0a0a0a;--card:#141414;--border:#2a2a2a;--text:#e0e0e0;--dim:#888;--accent:#4a9eff;--green:#4caf50;--red:#ef5350;--tab-bg:#111; }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,'SF Mono','Menlo',monospace;background:var(--bg);color:var(--text);min-height:100vh}
+  .header{padding:16px 32px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:16px}
+  .header h1{font-size:16px;font-weight:600;letter-spacing:-0.5px}
+  .header .version{color:var(--dim);font-size:11px}
+  .header .worker-dot{width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block;margin-left:8px}
+  .header .worker-dot.ready{background:var(--green)}
+  .tabs{display:flex;border-bottom:1px solid var(--border);background:var(--tab-bg);padding:0 32px}
+  .tab{padding:12px 20px;font-size:13px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;font-family:inherit;background:none;border-top:none;border-left:none;border-right:none}
+  .tab:hover{color:var(--text)}.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .container{max-width:960px;margin:0 auto;padding:24px 32px}
+  .tab-panel{display:none}.tab-panel.active{display:block}
+  .drop-zone{border:2px dashed var(--border);border-radius:10px;padding:48px 24px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+  .drop-zone:hover,.drop-zone.dragover{border-color:var(--accent);background:rgba(74,158,255,.05)}
+  .drop-zone .icon{font-size:36px;margin-bottom:12px;opacity:.4}
+  .drop-zone .hint{color:var(--dim);font-size:12px;margin-top:6px}
+  .drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .drop-zone.has-file{border-style:solid;border-color:var(--green);padding:12px 16px}
+  .drop-zone.has-file .icon,.drop-zone.has-file .hint{display:none}
+  .drop-zone .file-info{display:none;font-size:13px}
+  .drop-zone.has-file .file-info{display:flex;align-items:center;gap:12px}
+  .drop-zone .file-name{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .drop-zone .file-size{color:var(--dim);font-size:12px}
+  .drop-zone .file-clear{background:none;border:1px solid var(--red);color:var(--red);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;font-family:inherit}
+  .form-section{margin-top:20px}
+  .form-section h3{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  .form-row{display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+  .form-group{display:flex;flex-direction:column;gap:4px;min-width:120px}
+  .form-group label{font-size:11px;color:var(--dim)}
+  .form-group input,.form-group select{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px;font-family:inherit;width:100%}
+  .form-group input:focus,.form-group select:focus{outline:none;border-color:var(--accent)}
+  .form-group select{cursor:pointer}.form-group .hint{font-size:10px;color:var(--dim);margin-top:2px}
+  .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+  .btn{padding:9px 18px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}.btn:active{transform:scale(.97)}.btn:disabled{opacity:.3;cursor:not-allowed}
+  .btn.green{background:var(--green);color:#000;border-color:var(--green);font-weight:600}.btn.green:hover{background:#43a047}
+  .status{padding:10px 14px;border-radius:8px;font-size:13px;margin-top:16px;display:none}
+  .status.show{display:block}
+  .status.info{background:rgba(74,158,255,.1);border:1px solid rgba(74,158,255,.2);color:var(--accent)}
+  .status.error{background:rgba(239,83,80,.1);border:1px solid rgba(239,83,80,.2);color:var(--red)}
+  .status.success{background:rgba(76,175,80,.1);border:1px solid rgba(76,175,80,.2);color:var(--green)}
+  .loading{display:inline-block;width:14px;height:14px;border:2px solid var(--dim);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .meta-item{display:flex;flex-direction:column;gap:3px}
+  .meta-label{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+  .meta-value{font-size:12px;font-family:'SF Mono',monospace;color:var(--text);word-break:break-all}
+  .meta-value.json{white-space:pre-wrap;color:var(--accent);font-size:11px;max-height:400px;overflow-y:auto}
+  .preview{display:flex;gap:12px;margin-top:16px;align-items:stretch}
+  .preview-item{flex:1;min-width:200px;border:1px solid var(--border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
+  .preview-item .label{padding:6px 10px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--border);background:var(--card)}
+  .preview-item img,.preview-item video{width:100%;flex:1;display:block;background:#000;object-fit:contain}
+  .embed-zone{display:flex;gap:12px;flex-wrap:wrap}
+  .embed-slot{flex:1;min-width:180px;min-height:100px;border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--dim);cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+  .embed-slot:hover{border-color:var(--accent)}.embed-slot.filled{border-style:solid;border-color:var(--green)}
+  .embed-slot input{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .embed-slot img,.embed-slot video{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
+  .embed-slot .remove{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);border:none;color:var(--red);width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:12px;display:none;z-index:1}
+  .embed-slot.filled .remove{display:block}
+  .output-group{display:flex;gap:8px;align-items:center;margin-top:12px}
+  .output-group input{flex:1}
+  .progress-bar{margin-top:12px;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:12px 16px;display:none}
+  .progress-bar.show{display:block}
+  .progress-bar .bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:8px}
+  .progress-bar .bar-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .3s;width:0%}
+  .progress-bar .stage{font-size:12px;color:var(--dim)}
+  footer{padding:20px 32px;border-top:1px solid var(--border);color:var(--dim);font-size:10px;text-align:center;margin-top:40px}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Live Photo 工具</h1>
+  <span class="version" id="version">loading...</span>
+  <span class="worker-dot" id="workerDot" title="Worker status"></span>
+</div>
+<div class="tabs">
+  <button class="tab active" data-tab="getmeta">元数据 (GetMeta)</button>
+  <button class="tab" data-tab="demux">拆分 (Demux)</button>
+  <button class="tab" data-tab="embed">封装 (Embed)</button>
+</div>
+
+<!-- GetMeta Tab -->
+<div class="tab-panel active" id="panel-getmeta">
+  <div class="container">
+    <div class="drop-zone" id="metaDrop">
+      <div class="icon">📂</div><div>拖入文件，或点击选择</div>
+      <div class="hint">支持 AVIF、JPEG (Motion Photo)、MP4</div>
+      <input type="file" id="metaInput" accept=".avif,.jpg,.jpeg,.mp4,.png">
+      <div class="file-info"><span class="file-name" id="metaFileName"></span><span class="file-size" id="metaFileSize"></span><button class="file-clear" onclick="clearMetaFile(event)">清除</button></div>
+    </div>
+    <div class="status" id="metaStatus"></div>
+    <div class="form-section" id="metaResult" style="display:none">
+      <div class="meta-grid" id="metaGrid"></div>
+      <details style="margin-top:12px"><summary style="font-size:11px;color:var(--dim);cursor:pointer">完整 JSON</summary><pre class="meta-value json" id="metaJson" style="margin-top:8px"></pre></details>
+    </div>
+  </div>
+</div>
+
+<!-- Demux Tab -->
+<div class="tab-panel" id="panel-demux">
+  <div class="container">
+    <div class="drop-zone" id="demuxDrop">
+      <div class="icon">📂</div><div>拖入文件，或点击选择</div>
+      <div class="hint">支持 JPEG Motion Photo、AVIF Live Photo</div>
+      <input type="file" id="demuxInput" accept=".avif,.jpg,.jpeg">
+      <div class="file-info"><span class="file-name" id="demuxFileName"></span><span class="file-size" id="demuxFileSize"></span><button class="file-clear" onclick="clearDemuxFile(event)">清除</button></div>
+    </div>
+    <div class="status" id="demuxStatus"></div>
+    <div id="demuxResult" style="display:none">
+      <div class="preview">
+        <div class="preview-item"><div class="label">静态图</div><img id="demuxStillPreview"></div>
+        <div class="preview-item"><div class="label">视频</div><video id="demuxVideoPreview" controls></video></div>
+      </div>
+      <div class="actions" style="margin-top:12px"><button class="btn" onclick="downloadDemuxStill()">下载静态图</button><button class="btn" onclick="downloadDemuxVideo()">下载视频</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Embed Tab -->
+<div class="tab-panel" id="panel-embed">
+  <div class="container">
+    <p style="font-size:12px;color:var(--dim);margin-bottom:12px">选择静态图（任意格式，浏览器自动转 AVIF）和 AV1 编码的 MP4 视频，封装为 XOMU Live Photo AVIF</p>
+    <div class="embed-zone">
+      <div class="embed-slot" id="embedStillSlot"><span>静态图 (JPEG/PNG/AVIF)</span><input type="file" accept=".jpg,.jpeg,.png,.avif,.webp" onchange="loadEmbedStill(this)"><button class="remove" onclick="event.stopPropagation();clearEmbedStill()">&times;</button></div>
+      <div class="embed-slot" id="embedVideoSlot"><span>视频 (AV1 MP4)</span><input type="file" accept=".mp4" onchange="loadEmbedVideo(this)"><button class="remove" onclick="event.stopPropagation();clearEmbedVideo()">&times;</button></div>
+    </div>
+    <div class="actions" style="margin-top:12px"><button class="btn green" id="embedBtn" onclick="doEmbed()" disabled>封装 Live Photo</button></div>
+    <div class="status" id="embedStatus"></div>
+  </div>
+</div>
+
+<footer>aviflph WASM — 纯浏览器端处理，无需上传</footer>
+<script>
+// ====== State ======
+let worker = null;
+let msgId = 0;
+let pendingCallbacks = {};
+let metaFile = null, demuxFile = null;
+let demuxStillData = null, demuxVideoData = null;
+let embedStillData = null, embedVideoData = null, embedStillFile = null;
+
+// ====== Worker setup ======
+function initWorker() {
+  worker = new Worker("worker.js");
+  worker.onmessage = function(e) {
+    const msg = e.data;
+    if (msg.id && msg.id.endsWith("_progress")) {
+      const baseId = msg.id.replace("_progress", "");
+      if (pendingCallbacks[baseId] && pendingCallbacks[baseId].onProgress) {
+        pendingCallbacks[baseId].onProgress(msg.stage);
+      }
+      return;
+    }
+    const cb = pendingCallbacks[msg.id];
+    if (cb) {
+      delete pendingCallbacks[msg.id];
+      if (msg.ok) cb.resolve(msg.result);
+      else cb.reject(new Error(msg.error));
+    }
+  };
+  worker.onerror = function(e) {
+    console.error("Worker error:", e);
+    document.getElementById("version").textContent = "Worker 加载失败";
+  };
+  sendToWorker("init", null).then(v => {
+    document.getElementById("version").textContent = "aviflph v" + v;
+    document.getElementById("workerDot").classList.add("ready");
+    document.getElementById("workerDot").title = "Worker ready";
+  }).catch(err => {
+    document.getElementById("version").textContent = "WASM 加载失败: " + err.message;
+  });
+}
+
+function sendToWorker(op, data, opts, onProgress) {
+  return new Promise((resolve, reject) => {
+    const id = "msg_" + (++msgId);
+    pendingCallbacks[id] = { resolve, reject, onProgress };
+    const msg = { id, op, data };
+    if (opts !== undefined) msg.opts = opts;
+    worker.postMessage(msg);
+  });
+}
+
+function readFileAsBytes(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// ====== Helpers ======
+function showStatus(panel, type, msg, loading) {
+  const el = document.getElementById(panel + "Status");
+  if (!el) return;
+  el.className = "status show " + type;
+  el.innerHTML = (loading ? '<span class="loading"></span>' : "") + msg;
+}
+function hideStatus(panel) {
+  const el = document.getElementById(panel + "Status");
+  if (el) el.className = "status";
+}
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1048576).toFixed(2) + " MB";
+}
+function downloadBlob(data, filename) {
+  const blob = new Blob([data]);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ====== Drop zones ======
+function setupDropZone(dropId, inputId, onFile) {
+  const drop = document.getElementById(dropId);
+  const input = document.getElementById(inputId);
+  ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("dragover"); }));
+  ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("dragover"); }));
+  drop.addEventListener("drop", e => { if (e.dataTransfer.files.length) onFile(e.dataTransfer.files[0]); });
+  input.addEventListener("change", e => { if (e.target.files.length) onFile(e.target.files[0]); });
+}
+function setDropFileInfo(dropId, nameId, sizeId, file) {
+  document.getElementById(dropId).classList.add("has-file");
+  document.getElementById(nameId).textContent = file.name;
+  document.getElementById(sizeId).textContent = formatSize(file.size);
+}
+function clearDropFileInfo(dropId, inputId) {
+  document.getElementById(dropId).classList.remove("has-file");
+  document.getElementById(inputId).value = "";
+}
+
+// ====== Tabs ======
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("panel-" + tab.dataset.tab).classList.add("active");
+  });
+});
+
+// ====== GetMeta ======
+setupDropZone("metaDrop", "metaInput", file => {
+  metaFile = file;
+  setDropFileInfo("metaDrop", "metaFileName", "metaFileSize", file);
+  doGetMeta(file);
+});
+function clearMetaFile(e) {
+  e && e.stopPropagation();
+  metaFile = null;
+  clearDropFileInfo("metaDrop", "metaInput");
+  document.getElementById("metaResult").style.display = "none";
+  hideStatus("meta");
+}
+async function doGetMeta(file) {
+  showStatus("meta", "info", "解析中...", true);
+  try {
+    const bytes = await readFileAsBytes(file);
+    const json = await sendToWorker("getmeta", bytes);
+    const meta = JSON.parse(json);
+    const avif = meta.avif || {};
+    const grid = document.getElementById("metaGrid");
+    grid.innerHTML = "";
+    [["文件类型", meta.file_type || "—"],
+     ["格式", (avif.major_brand || "—").toUpperCase()],
+     ["Live Photo", avif.is_live_photo ? "是" : "否"],
+     ["主条目数", (avif.items || []).length],
+     ["条目", (avif.items || []).map(i => "#" + i.id + " " + i.type + " " + formatSize(i.length)).join("\n")],
+     ["EXIF", (avif.exif || []).length + " 字段"]
+    ].forEach(([label, value]) => {
+      const item = document.createElement("div");
+      item.className = "meta-item";
+      item.innerHTML = '<div class="meta-label">' + label + '</div><div class="meta-value">' + String(value).replace(/\n/g, "<br>") + '</div>';
+      grid.appendChild(item);
+    });
+    document.getElementById("metaJson").textContent = JSON.stringify(meta, null, 2);
+    document.getElementById("metaResult").style.display = "";
+    hideStatus("meta");
+    showStatus("meta", "success", file.name + " (" + formatSize(file.size) + ")");
+  } catch (e) { showStatus("meta", "error", "解析失败: " + e.message); }
+}
+
+// ====== Demux ======
+setupDropZone("demuxDrop", "demuxInput", file => {
+  demuxFile = file;
+  setDropFileInfo("demuxDrop", "demuxFileName", "demuxFileSize", file);
+  doDemux(file);
+});
+function clearDemuxFile(e) {
+  e && e.stopPropagation();
+  demuxFile = null;
+  clearDropFileInfo("demuxDrop", "demuxInput");
+  document.getElementById("demuxResult").style.display = "none";
+  hideStatus("demux");
+}
+async function doDemux(file) {
+  showStatus("demux", "info", "拆分中...", true);
+  try {
+    const bytes = await readFileAsBytes(file);
+    const result = await sendToWorker("demux", bytes);
+    demuxStillData = result.still;
+    demuxVideoData = result.video;
+    document.getElementById("demuxStillPreview").src = URL.createObjectURL(new Blob([result.still]));
+    document.getElementById("demuxVideoPreview").src = URL.createObjectURL(new Blob([result.video], { type: "video/mp4" }));
+    document.getElementById("demuxResult").style.display = "";
+    hideStatus("demux");
+    showStatus("demux", "success", "静态图 " + formatSize(result.still.length) + " + 视频 " + formatSize(result.video.length));
+  } catch (e) { showStatus("demux", "error", "拆分失败: " + e.message); }
+}
+function downloadDemuxStill() {
+  if (!demuxStillData || !demuxFile) return;
+  downloadBlob(demuxStillData, demuxFile.name.replace(/\.[^.]+$/, "") + "_still.avif");
+}
+function downloadDemuxVideo() {
+  if (!demuxVideoData || !demuxFile) return;
+  downloadBlob(demuxVideoData, demuxFile.name.replace(/\.[^.]+$/, "") + "_video.mp4");
+}
+
+// ====== Embed ======
+function loadEmbedStill(input) {
+  const file = input.files[0]; if (!file) return;
+  embedStillFile = file;
+  readFileAsBytes(file).then(bytes => {
+    embedStillData = bytes;
+    const slot = document.getElementById("embedStillSlot");
+    slot.classList.add("filled");
+    slot.querySelector("span").style.display = "none";
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(new Blob([bytes]));
+    slot.appendChild(img);
+    document.getElementById("embedBtn").disabled = !(embedStillData && embedVideoData);
+  });
+}
+function clearEmbedStill() {
+  embedStillData = null;
+  embedStillFile = null;
+  const slot = document.getElementById("embedStillSlot");
+  slot.classList.remove("filled");
+  slot.querySelector("span").style.display = "";
+  const img = slot.querySelector("img"); if (img) img.remove();
+  slot.querySelector("input").value = "";
+  document.getElementById("embedBtn").disabled = true;
+}
+function loadEmbedVideo(input) {
+  const file = input.files[0]; if (!file) return;
+  readFileAsBytes(file).then(bytes => {
+    embedVideoData = bytes;
+    const slot = document.getElementById("embedVideoSlot");
+    slot.classList.add("filled");
+    slot.querySelector("span").style.display = "none";
+    const vid = document.createElement("video");
+    vid.src = URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }));
+    vid.muted = true;
+    slot.appendChild(vid);
+    document.getElementById("embedBtn").disabled = !(embedStillData && embedVideoData);
+  });
+}
+function clearEmbedVideo() {
+  embedVideoData = null;
+  const slot = document.getElementById("embedVideoSlot");
+  slot.classList.remove("filled");
+  slot.querySelector("span").style.display = "";
+  const vid = slot.querySelector("video"); if (vid) vid.remove();
+  slot.querySelector("input").value = "";
+  document.getElementById("embedBtn").disabled = true;
+}
+async function doEmbed() {
+  if (!embedStillData || !embedVideoData) return;
+  showStatus("embed", "info", "编码静态图...", true);
+  try {
+    let stillAVIF;
+    const ext = embedStillFile?.name?.split(".").pop()?.toLowerCase();
+    if (ext === "avif") {
+      stillAVIF = embedStillData;
+    } else {
+      stillAVIF = await sendToWorker("encode_still", embedStillData, { quality: 10, speed: 6 });
+    }
+    showStatus("embed", "info", "封装中...", true);
+    const result = await sendToWorker("embed", { still: stillAVIF, video: embedVideoData });
+    downloadBlob(result, "live_photo.avif");
+    hideStatus("embed");
+    showStatus("embed", "success", "已下载 live_photo.avif (" + formatSize(result.length) + ")");
+  } catch (e) { showStatus("embed", "error", "封装失败: " + e.message); }
+}
+
+// ====== Init ======
+initWorker();
+</script>
+</body>
+</html>
