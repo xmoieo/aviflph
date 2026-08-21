@@ -55,10 +55,10 @@ jobs:
             libext: .dylib
 
           - target: darwin-amd64
-            runner: macos-13
+            runner: macos-latest
             goos: darwin
             goarch: amd64
-            cc: clang
+            cc: "clang -arch x86_64"
             ext: ""
             libext: .dylib
 
